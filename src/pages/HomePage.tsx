@@ -1,148 +1,227 @@
-// Home page of the app, Currently a demo page for demonstration.
-// Please rewrite this file to implement your own logic. Do not replace or delete it, simply rewrite this HomePage.tsx file.
-import { useEffect } from 'react'
-import { Sparkles } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { ThemeToggle } from '@/components/ThemeToggle'
-import { Toaster, toast } from '@/components/ui/sonner'
-import { create } from 'zustand'
-import { useShallow } from 'zustand/react/shallow'
-import { AppLayout } from '@/components/layout/AppLayout'
-
-// Timer store: independent slice with a clear, minimal API, for demonstration
-type TimerState = {
-  isRunning: boolean;
-  elapsedMs: number;
-  start: () => void;
-  pause: () => void;
-  reset: () => void;
-  tick: (deltaMs: number) => void;
-}
-
-const useTimerStore = create<TimerState>((set) => ({
-  isRunning: false,
-  elapsedMs: 0,
-  start: () => set({ isRunning: true }),
-  pause: () => set({ isRunning: false }),
-  reset: () => set({ elapsedMs: 0, isRunning: false }),
-  tick: (deltaMs) => set((s) => ({ elapsedMs: s.elapsedMs + deltaMs })),
-}))
-
-// Counter store: separate slice to showcase multiple stores without coupling
-type CounterState = {
-  count: number;
-  inc: () => void;
-  reset: () => void;
-}
-
-const useCounterStore = create<CounterState>((set) => ({
-  count: 0,
-  inc: () => set((s) => ({ count: s.count + 1 })),
-  reset: () => set({ count: 0 }),
-}))
-
-function formatDuration(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000))
-  const m = Math.floor(total / 60)
-  const s = total % 60
-  return `${m}:${s.toString().padStart(2, '0')}`
-}
-
-export function HomePage() {
-  // Select only what is needed to avoid unnecessary re-renders
-  const { isRunning, elapsedMs } = useTimerStore(
-    useShallow((s) => ({ isRunning: s.isRunning, elapsedMs: s.elapsedMs })),
-  )
-  const start = useTimerStore((s) => s.start)
-  const pause = useTimerStore((s) => s.pause)
-  const resetTimer = useTimerStore((s) => s.reset)
-  const count = useCounterStore((s) => s.count)
-  const inc = useCounterStore((s) => s.inc)
-  const resetCount = useCounterStore((s) => s.reset)
-
-  // Drive the timer only while running; avoid update-depth issues with a scoped RAF
-  useEffect(() => {
-    if (!isRunning) return
-    let raf = 0
-    let last = performance.now()
-    const loop = () => {
-      const now = performance.now()
-      const delta = now - last
-      last = now
-      // Read store API directly to keep effect deps minimal and stable
-      useTimerStore.getState().tick(delta)
-      raf = requestAnimationFrame(loop)
-    }
-    raf = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(raf)
-  }, [isRunning])
-
-  const onPleaseWait = () => {
-    inc()
-    if (!isRunning) {
-      start()
-      toast.success('Building your app…', {
-        description: 'Hang tight, we\'re setting everything up.',
-      })
-    } else {
-      pause()
-      toast.info('Taking a short pause', {
-        description: 'We\'ll continue shortly.',
-      })
-    }
-  }
-
-  const formatted = formatDuration(elapsedMs)
-
+import React, { useState, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Calendar as CalendarIcon, Search, Compass, Loader2, Server, Users, BarChart2 } from 'lucide-react';
+import { DateRange } from 'react-day-picker';
+import { addDays, format } from 'date-fns';
+import { cn } from '@/lib/utils';
+import { api } from '@/lib/api-client';
+import type { AccessReportItem } from '@shared/types';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Toaster, toast } from '@/components/ui/sonner';
+import { Card, CardContent } from '@/components/ui/card';
+function DateRangePicker({
+  className,
+  date,
+  setDate,
+}: {
+  className?: string;
+  date: DateRange | undefined;
+  setDate: (date: DateRange | undefined) => void;
+}) {
   return (
-    <AppLayout>
-      <div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground p-4 overflow-hidden relative">
-        <ThemeToggle />
-        <div className="absolute inset-0 bg-gradient-rainbow opacity-10 dark:opacity-20 pointer-events-none" />
-        <div className="text-center space-y-8 relative z-10 animate-fade-in">
-          <div className="flex justify-center">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-primary flex items-center justify-center shadow-primary floating">
-              <Sparkles className="w-8 h-8 text-white rotating" />
+    <div className={cn('grid gap-2', className)}>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            id="date"
+            variant={'outline'}
+            className={cn(
+              'w-full justify-start text-left font-normal h-12 text-base',
+              !date && 'text-muted-foreground'
+            )}
+          >
+            <CalendarIcon className="mr-2 h-4 w-4" />
+            {date?.from ? (
+              date.to ? (
+                <>
+                  {format(date.from, 'LLL dd, y')} - {format(date.to, 'LLL dd, y')}
+                </>
+              ) : (
+                format(date.from, 'LLL dd, y')
+              )
+            ) : (
+              <span>Pick a date range</span>
+            )}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start">
+          <Calendar
+            initialFocus
+            mode="range"
+            defaultMonth={date?.from}
+            selected={date}
+            onSelect={setDate}
+            numberOfMonths={2}
+          />
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+const EmptyState = () => (
+  <motion.div
+    initial={{ opacity: 0, scale: 0.95 }}
+    animate={{ opacity: 1, scale: 1 }}
+    exit={{ opacity: 0, scale: 0.95 }}
+    className="text-center py-16 px-6"
+  >
+    <div className="mx-auto w-fit p-4 bg-primary/10 rounded-full">
+      <Compass className="h-12 w-12 text-primary" />
+    </div>
+    <h3 className="mt-6 text-2xl font-semibold text-foreground">Ready to Discover?</h3>
+    <p className="mt-2 text-lg text-muted-foreground">
+      Select a date range and start your scan to find unmanaged applications.
+    </p>
+  </motion.div>
+);
+const LoadingState = () => (
+  <div className="space-y-4 p-4">
+    {Array.from({ length: 5 }).map((_, i) => (
+      <div key={i} className="flex items-center space-x-4">
+        <Skeleton className="h-12 w-12 rounded-lg" />
+        <div className="space-y-2 flex-1">
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-4 w-1/2" />
+        </div>
+      </div>
+    ))}
+  </div>
+);
+const ResultsTable = ({ data }: { data: AccessReportItem[] }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.5 }}
+  >
+    <Card>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[300px]">Hostname</TableHead>
+              <TableHead>Last Seen</TableHead>
+              <TableHead>First Seen</TableHead>
+              <TableHead className="text-right">Unique Users</TableHead>
+              <TableHead className="text-right">Total Requests</TableHead>
+              <TableHead className="text-center">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.map((item) => (
+              <TableRow key={item.id} className="hover:bg-muted/50">
+                <TableCell className="font-medium flex items-center gap-2">
+                  <Server className="h-4 w-4 text-muted-foreground" />
+                  {item.hostname}
+                </TableCell>
+                <TableCell>{format(new Date(item.lastSeen), 'PP')}</TableCell>
+                <TableCell>{format(new Date(item.firstSeen), 'PP')}</TableCell>
+                <TableCell className="text-right flex items-center justify-end gap-2">
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                  {item.uniqueUsers.toLocaleString()}
+                </TableCell>
+                <TableCell className="text-right flex items-center justify-end gap-2">
+                  <BarChart2 className="h-4 w-4 text-muted-foreground" />
+                  {item.totalRequests.toLocaleString()}
+                </TableCell>
+                <TableCell className="text-center">
+                  <Button variant="outline" size="sm">Define App</Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  </motion.div>
+);
+export function HomePage() {
+  const [date, setDate] = useState<DateRange | undefined>({
+    from: addDays(new Date(), -30),
+    to: new Date(),
+  });
+  const [isLoading, setIsLoading] = useState(false);
+  const [reportData, setReportData] = useState<AccessReportItem[] | null>(null);
+  const handleScan = useCallback(async () => {
+    if (!date?.from || !date?.to) {
+      toast.error('Please select a valid date range.');
+      return;
+    }
+    setIsLoading(true);
+    setReportData(null);
+    try {
+      const data = await api<AccessReportItem[]>('/api/access/scan');
+      setReportData(data);
+    } catch (error) {
+      toast.error('Failed to fetch access report. Please try again.');
+      console.error(error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [date]);
+  return (
+    <>
+      <ThemeToggle className="fixed top-4 right-4" />
+      <main className="min-h-screen">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="py-16 md:py-24">
+            <div className="text-center animate-fade-in">
+              <h1 className="text-5xl font-bold font-display tracking-tight text-foreground sm:text-6xl">
+                Access Pathfinder
+              </h1>
+              <p className="mt-6 text-lg leading-8 text-muted-foreground max-w-2xl mx-auto">
+                Discover applications accessed via Cloudflare but not defined in Access.
+                Scan your logs to identify and secure your entire application landscape.
+              </p>
             </div>
-          </div>
-          <h1 className="text-5xl md:text-7xl font-display font-bold text-balance leading-tight">
-            Creating your <span className="text-gradient">app</span>
-          </h1>
-          <p className="text-lg md:text-xl text-muted-foreground max-w-xl mx-auto text-pretty">
-            Your application would be ready soon.
-          </p>
-          <div className="flex justify-center gap-4">
-            <Button 
-              size="lg"
-              onClick={onPleaseWait}
-              className="btn-gradient px-8 py-4 text-lg font-semibold hover:-translate-y-0.5 transition-all duration-200"
-              aria-live="polite"
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2, duration: 0.5 }}
+              className="mt-12 max-w-2xl mx-auto grid grid-cols-1 md:grid-cols-3 items-center gap-4"
             >
-              Please Wait
-            </Button>
-          </div>
-          <div className="flex items-center justify-center gap-6 text-sm text-muted-foreground">
-            <div>
-              Time elapsed: <span className="font-medium tabular-nums text-foreground">{formatted}</span>
+              <div className="md:col-span-2">
+                <DateRangePicker date={date} setDate={setDate} />
+              </div>
+              <Button
+                size="lg"
+                className="h-12 text-base font-semibold w-full transition-all duration-300 ease-in-out hover:shadow-lg hover:-translate-y-0.5"
+                onClick={handleScan}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                ) : (
+                  <Search className="mr-2 h-5 w-5" />
+                )}
+                Scan for Applications
+              </Button>
+            </motion.div>
+            <div className="mt-16">
+              <AnimatePresence mode="wait">
+                {isLoading && <LoadingState key="loading" />}
+                {!isLoading && reportData === null && <EmptyState key="empty" />}
+                {!isLoading && reportData !== null && <ResultsTable key="results" data={reportData} />}
+              </AnimatePresence>
             </div>
-            <div>
-              Coins: <span className="font-medium tabular-nums text-foreground">{count}</span>
-            </div>
-          </div>
-          <div className="flex justify-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => { resetTimer(); resetCount(); toast('Reset complete') }}>
-              Reset
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => { inc(); toast('Coin added') }}>
-              Add Coin
-            </Button>
           </div>
         </div>
-        <footer className="absolute bottom-8 text-center text-muted-foreground/80">
-          <p>Powered by Cloudflare</p>
-        </footer>
-        <Toaster richColors closeButton />
-      </div>
-    </AppLayout>
-  )
+      </main>
+      <footer className="text-center py-8 text-muted-foreground">
+        <p>Built with ❤�� at Cloudflare</p>
+      </footer>
+      <Toaster richColors />
+    </>
+  );
 }
