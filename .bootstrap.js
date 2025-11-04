@@ -8,7 +8,7 @@
 const fs = require('fs');
 const { execSync } = require('child_process');
 
-const PROJECT_NAME = "access-pathfinder-yzt39uxarbs0bwdaezprj";
+const PROJECT_NAME = "access-pathfinder";
 const BOOTSTRAP_MARKER = '.bootstrap-complete';
 
 // Check if already bootstrapped
