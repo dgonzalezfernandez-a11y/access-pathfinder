@@ -1,6 +1,6 @@
 # Access Pathfinder
 
-[cloudflarebutton]
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/dgonzalezfernandez-a11y/access-pathfinder)
 
 A security and visibility tool that scans Cloudflare Access logs to report on undefined applications, helping administrators discover and secure their entire application landscape.
 
@@ -79,7 +79,7 @@ This project is designed for easy deployment to Cloudflare Pages.
 
 You can deploy this application to your Cloudflare account with a single click.
 
-[cloudflarebutton]
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/dgonzalezfernandez-a11y/access-pathfinder)
 
 ### Manual Deployment via Wrangler
 
